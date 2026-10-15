@@ -55,6 +55,8 @@ import type { BusiTreeNode, BusiTreeRequest } from '@/models/tree/TreeNode'
 import {
   delDatasetTree,
   getDatasetPreview,
+  getFilteredDatasetPreview,
+  exportFilteredDatasetCsv,
   barInfoApi,
   perDelete,
   exportDatasetData,
@@ -117,6 +119,10 @@ const appStore = useAppStoreWithOut()
 const rootManage = ref(false)
 const disabledMove = ref(true)
 const showExport = ref(false)
+const showPreviewFilter = ref(false)
+const previewRowAuth = ref()
+const previewFilterTree = ref('')
+const csvLoading = ref(false)
 const rowAuth = ref()
 const exportDatasetLoading = ref(false)
 const limit = ref(t('data_set.ten_wan'))
@@ -223,6 +229,7 @@ const nodeInfo = reactive<Node>(cloneDeep(defaultNode))
 let allFields = []
 let columnsPreview = []
 let dataPreview = []
+let previewRequest = 0
 
 const allFieldsColumns = [
   {
@@ -387,9 +394,56 @@ const handleNodeClick = (data: BusiTreeNode) => {
     nodeInfo.ext = data.ext || 0
     columnsPreview = []
     dataPreview = []
+    allFields = []
+    previewFilterTree.value = ''
     activeName.value = 'dataPreview'
     handleClick(activeName.value)
   })
+}
+
+const openPreviewFilter = () => {
+  showPreviewFilter.value = true
+  nextTick(() =>
+    previewRowAuth.value?.init(previewFilterTree.value ? JSON.parse(previewFilterTree.value) : {})
+  )
+}
+
+const applyPreviewFilter = ({ logic, items, errorMessage }) => {
+  if (errorMessage) {
+    ElMessage.error(errorMessage)
+    return
+  }
+  previewFilterTree.value = items.length ? JSON.stringify({ logic, items }) : ''
+  showPreviewFilter.value = false
+  columnsPreview = []
+  dataPreview = []
+  handleClick('dataPreview')
+}
+
+const clearPreviewFilter = () => {
+  previewFilterTree.value = ''
+  showPreviewFilter.value = false
+  columnsPreview = []
+  dataPreview = []
+  handleClick('dataPreview')
+}
+
+const downloadPreviewCsv = async () => {
+  csvLoading.value = true
+  try {
+    const res = await exportFilteredDatasetCsv(nodeInfo.id, previewFilterTree.value)
+    const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${nodeInfo.name}.csv`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  } finally {
+    csvLoading.value = false
+  }
 }
 
 const exportDataset = () => {
@@ -535,21 +589,33 @@ const handleClick = (tabName: TabPaneName) => {
       }
       dataPreviewLoading.value = true
       total.value = null
-      getDatasetPreview(nodeInfo.id)
+      const currentId = nodeInfo.id
+      const requestId = ++previewRequest
+      const filtered = !!previewFilterTree.value
+      const preview = filtered
+        ? getFilteredDatasetPreview(currentId, previewFilterTree.value)
+        : getDatasetPreview(currentId)
+      preview
         .then(res => {
-          allFields = (res?.allFields as unknown as Field[]) || []
-          datasetTableFiled.value = allFields
+          if (nodeInfo.id !== currentId || requestId !== previewRequest) return
+          if (!filtered || !allFields.length) {
+            allFields = (res?.allFields as unknown as Field[]) || []
+          }
+          datasetTableFiled.value = (res?.data?.fields as Field[]) || []
           columnsPreview = generateColumns((res?.data?.fields as Field[]) || [])
           dataPreview = (res?.data?.data as Array<{}>) || []
           columns.value = columnsPreview
           tableData.value = dataPreview
+          if (filtered) total.value = res?.total
         })
         .finally(() => {
-          dataPreviewLoading.value = false
+          if (requestId === previewRequest) dataPreviewLoading.value = false
         })
-      getDatasetTotal(nodeInfo.id).then(res => {
-        total.value = res
-      })
+      if (!filtered) {
+        getDatasetTotal(currentId).then(res => {
+          if (nodeInfo.id === currentId && requestId === previewRequest) total.value = res
+        })
+      }
       break
     case 'structPreview':
       columns.value = allFieldsColumns
@@ -1071,7 +1137,23 @@ const proxyAllowDrop = throttle((arg1, arg2) => {
         </div>
         <div class="dataset-table-info">
           <div v-if="activeName === 'dataPreview'" class="preview-num">
-            {{ t('data_set.pieces_in_total', { msg: total }) }}
+            <span>{{ t('data_set.pieces_in_total', { msg: total }) }}</span>
+            <div class="preview-actions">
+              <el-button
+                :type="previewFilterTree ? 'primary' : 'default'"
+                :disabled="dataPreviewLoading"
+                @click="openPreviewFilter"
+              >
+                {{ t('dataset.export_filter') }}
+              </el-button>
+              <el-button
+                v-if="exportPermissions[0]"
+                :loading="csvLoading"
+                @click="downloadPreviewCsv"
+              >
+                {{ t('data_set.download_csv') }}
+              </el-button>
+            </div>
           </div>
           <template v-if="['dataPreview', 'structPreview'].includes(activeName)">
             <div class="info-table" :class="[{ 'struct-preview': activeName === 'structPreview' }]">
@@ -1165,6 +1247,26 @@ const proxyAllowDrop = throttle((arg1, arg2) => {
     <creat-ds-group @finish="getData()" ref="creatDsFolder"></creat-ds-group>
   </div>
   <!--导出数据集弹框-->
+  <el-dialog
+    v-model="showPreviewFilter"
+    width="800px"
+    class="de-dialog-form form-tree-cont"
+    :title="t('dataset.export_filter')"
+    append-to-body
+  >
+    <div class="tree-cont">
+      <div class="content">
+        <RowAuth ref="previewRowAuth" @save="applyPreviewFilter" />
+      </div>
+    </div>
+    <template #footer>
+      <el-button @click="clearPreviewFilter">{{ t('commons.clear_filter') }}</el-button>
+      <el-button @click="showPreviewFilter = false">{{ t('dataset.cancel') }}</el-button>
+      <el-button type="primary" @click="previewRowAuth?.submit()">{{
+        t('dataset.confirm')
+      }}</el-button>
+    </template>
+  </el-dialog>
   <el-dialog
     v-if="showExport"
     v-model="showExport"
@@ -1431,10 +1533,18 @@ const proxyAllowDrop = throttle((arg1, arg2) => {
       font-weight: 400;
       line-height: 22px;
       margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .preview-actions {
+      display: flex;
+      align-items: center;
     }
 
     .info-table {
-      height: calc(100% - 37px);
+      height: calc(100% - 48px);
     }
 
     .struct-preview {

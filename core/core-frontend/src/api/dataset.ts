@@ -216,6 +216,24 @@ export const getDatasetPreview = async (id): Promise<FieldData> => {
   })
 }
 
+export const getFilteredDatasetPreview = async (
+  id: string,
+  expressionTree: string
+): Promise<FieldData> => {
+  return request
+    .post({ url: '/datasetTree/previewFiltered', data: { id, expressionTree } })
+    .then(res => res?.data)
+}
+
+export const exportFilteredDatasetCsv = (id: string, expressionTree: string) => {
+  return request.post({
+    url: '/datasetTree/exportDatasetCsv',
+    data: { id, expressionTree },
+    responseType: 'blob',
+    loading: true
+  })
+}
+
 export const getDatasetTotal = async (id): Promise<FieldData> => {
   return request.post({ url: `/datasetData/getDatasetTotal`, data: { id: id } }).then(res => {
     return res?.data

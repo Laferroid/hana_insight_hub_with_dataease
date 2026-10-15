@@ -19,6 +19,7 @@ import io.dataease.dataset.manage.DatasetCacheManage;
 import io.dataease.dataset.manage.DatasetDataManage;
 import io.dataease.dataset.manage.DatasetSQLManage;
 import io.dataease.dataset.utils.TableUtils;
+import io.dataease.dictionary.manage.DictionaryManage;
 import io.dataease.datasource.dao.auto.entity.CoreDatasourceTask;
 import io.dataease.datasource.dao.auto.entity.CoreDatasourceTaskLog;
 import io.dataease.datasource.dao.auto.entity.CoreDsFinishPage;
@@ -133,6 +134,8 @@ public class DatasourceServer implements DatasourceApi {
     private DatabaseTimeManage databaseTimeManage;
     @Resource
     private DatasetCacheManage datasetCacheManage;
+    @Resource
+    private DictionaryManage dictionaryManage;
 
 
     public enum UpdateType {
@@ -943,9 +946,11 @@ public class DatasourceServer implements DatasourceApi {
             datasourceRequest.setTable(tableName);
             Provider provider = ProviderFactory.getProvider(datasourceSchemaDTO.getType());
             List<TableField> tableFields = (List<TableField>) provider.fetchTableField(datasourceRequest);
-            return tableFields.stream().filter(tableField -> {
+            List<TableField> visibleFields = tableFields.stream().filter(tableField -> {
                 return !tableField.getOriginName().equalsIgnoreCase("dataease_uuid");
             }).collect(Collectors.toList());
+            dictionaryManage.enrichFields(datasourceId, tableName, visibleFields);
+            return visibleFields;
         }
 
         DatasourceSchemaDTO datasourceSchemaDTO = new DatasourceSchemaDTO();
@@ -955,7 +960,9 @@ public class DatasourceServer implements DatasourceApi {
         datasourceRequest.setQuery(TableUtils.tableName2Sql(datasourceSchemaDTO, tableName) + " LIMIT 0 OFFSET 0");
         datasourceRequest.setTable(tableName);
         Provider provider = ProviderFactory.getProvider(datasourceSchemaDTO.getType());
-        return (List<TableField>) provider.fetchTableField(datasourceRequest);
+        List<TableField> tableFields = (List<TableField>) provider.fetchTableField(datasourceRequest);
+        dictionaryManage.enrichFields(datasourceId, tableName, tableFields);
+        return tableFields;
     }
 
     @Override

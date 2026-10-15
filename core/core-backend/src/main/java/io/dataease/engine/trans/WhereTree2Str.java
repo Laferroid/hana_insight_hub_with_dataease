@@ -57,7 +57,8 @@ public class WhereTree2Str {
             whereSql = String.join(" OR ", res);
         }
         if (CollectionUtils.isNotEmpty(exportFilters)) {
-            whereSql = whereSql == null ? String.join(" and ", exportFilters) : whereSql + " AND " + String.join(" and ", exportFilters);
+            String additionalFilters = String.join(" AND ", exportFilters);
+            whereSql = whereSql == null ? additionalFilters : "(" + whereSql + ") AND (" + additionalFilters + ")";
         }
         meta.setWhereTrees(whereSql != null ? "(" + whereSql + ")" : null);
         meta.setWhereTreesDialect(fieldsDialect);

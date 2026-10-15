@@ -21,6 +21,7 @@ import io.dataease.dataset.utils.DatasetUtils;
 import io.dataease.dataset.utils.FieldUtils;
 import io.dataease.dataset.utils.SqlUtils;
 import io.dataease.dataset.utils.TableUtils;
+import io.dataease.dictionary.manage.DictionaryManage;
 import io.dataease.datasource.dao.auto.repository.CoreDatasourceRepository;
 import io.dataease.datasource.manage.DataSourceManage;
 import io.dataease.datasource.manage.EngineManage;
@@ -93,6 +94,8 @@ public class DatasetDataManage {
     private DataSourceManage dataSourceManage;
     @Resource
     private DatasetCacheManage datasetCacheManage;
+    @Resource
+    private DictionaryManage dictionaryManage;
 
     private static Logger logger = LoggerFactory.getLogger(DatasetDataManage.class);
 
@@ -206,6 +209,9 @@ public class DatasetDataManage {
             logger.debug("calcite data table field sql: " + datasourceRequest.getQuery());
             tableFields = provider.fetchTableField(datasourceRequest);
         }
+        if (StringUtils.equalsIgnoreCase(type, DatasetTableType.DB)) {
+            dictionaryManage.enrichFields(datasetTableDTO.getDatasourceId(), tableInfoDTO.getTable(), tableFields);
+        }
         return transFields(tableFields, true);
     }
 
@@ -227,6 +233,11 @@ public class DatasetDataManage {
     }
 
     public Map<String, Object> previewDataWithLimit(DatasetGroupInfoDTO datasetGroupInfoDTO, Integer start, Integer count, boolean checkPermission, boolean encode) throws Exception {
+        return previewDataWithLimit(datasetGroupInfoDTO, start, count, checkPermission, encode, null);
+    }
+
+    public Map<String, Object> previewDataWithLimit(DatasetGroupInfoDTO datasetGroupInfoDTO, Integer start, Integer count,
+                                                     boolean checkPermission, boolean encode, String expressionTree) throws Exception {
         if (encode) {
             DatasetUtils.dsDecode(datasetGroupInfoDTO);
         }
@@ -267,6 +278,12 @@ public class DatasetDataManage {
         if (uid != null && checkPermission) {
             rowPermissionsTree = permissionManage.getRowPermissionsTree(datasetGroupInfoDTO.getId(), uid);
         }
+        if (StringUtils.isNotBlank(expressionTree)) {
+            if (!checkPermission) {
+                throw DEException.getException("筛选预览需要权限检查");
+            }
+            rowPermissionsTree.add(DatasetPreviewFilter.parse(expressionTree, fields));
+        }
         Provider provider;
         if (crossDs) {
             provider = ProviderFactory.getDefaultProvider();
@@ -280,6 +297,10 @@ public class DatasetDataManage {
         Field2SQLObj.field2sqlObj(sqlMeta, fields, fields, crossDs, dsMap, Utils.getParams(fields), null, pluginManage);
         WhereTree2Str.transFilterTrees(sqlMeta, rowPermissionsTree, fields, crossDs, dsMap, Utils.getParams(fields), null, pluginManage);
         Order2SQLObj.getOrders(sqlMeta, datasetGroupInfoDTO.getSortFields(), fields, crossDs, dsMap, Utils.getParams(fields), null, pluginManage);
+        String countSql = null;
+        if (expressionTree != null && (start == null || start == 0)) {
+            countSql = provider.rebuildSQL(SQLProvider.createQuerySQL(sqlMeta, false, false, false), sqlMeta, crossDs, dsMap);
+        }
         String querySQL;
         if (start == null || count == null) {
             querySQL = SQLProvider.createQuerySQL(sqlMeta, false, needOrder, false);
@@ -312,6 +333,9 @@ public class DatasetDataManage {
             map.put("allFields", fieldList);
         }
         map.put("sql", Base64.getEncoder().encodeToString(querySQL.getBytes()));
+        if (countSql != null) {
+            map.put("total", getDatasetTotal(datasetGroupInfoDTO, countSql, null));
+        }
         return map;
     }
 

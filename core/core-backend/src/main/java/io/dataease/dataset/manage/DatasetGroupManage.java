@@ -20,6 +20,7 @@ import io.dataease.dataset.dto.DataSetNodeBO;
 import io.dataease.dataset.utils.DatasetUtils;
 import io.dataease.dataset.utils.FieldUtils;
 import io.dataease.dataset.utils.TableUtils;
+import io.dataease.dictionary.manage.DictionaryManage;
 import io.dataease.datasource.dao.auto.repository.CoreDatasourceRepository;
 import io.dataease.engine.constant.ExtFieldConstant;
 import io.dataease.engine.func.FunctionConstant;
@@ -71,6 +72,8 @@ public class DatasetGroupManage {
     private DatasetTableManage datasetTableManage;
     @Resource
     private DatasetTableFieldManage datasetTableFieldManage;
+    @Resource
+    private DictionaryManage dictionaryManage;
     @Resource
     private CoreDatasetTableRepository coreDatasetTableRepository;
     @Resource
@@ -486,6 +489,7 @@ public class DatasetGroupManage {
                 return datasetTableFieldDTO;
             }).collect(Collectors.toList());
 
+            dictionaryManage.enrichDatasetDescriptions(datasetTableManage.selectByDatasetGroupId(id), allFields);
             DatasetUtils.listEncode(allFields);
 
             dto.setAllFields(allFields);
@@ -524,6 +528,9 @@ public class DatasetGroupManage {
                 return datasetTableFieldDTO;
             }).collect(Collectors.toList());
 
+            if ("preview".equalsIgnoreCase(type)) {
+                dictionaryManage.enrichDatasetDescriptions(datasetTableManage.selectByDatasetGroupId(id), allFields);
+            }
             dto.setAllFields(allFields);
 
             if ("preview".equalsIgnoreCase(type)) {

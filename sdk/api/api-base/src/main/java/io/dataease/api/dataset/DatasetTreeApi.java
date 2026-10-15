@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 
 import java.util.List;
+import java.util.Map;
 
 import static io.dataease.constant.AuthResourceEnum.DATASET;
 
@@ -105,4 +106,14 @@ public interface DatasetTreeApi {
     @Operation(summary = "数据集导出")
     @PostMapping("/exportDataset")
     void exportDataset(@RequestBody DataSetExportRequest request, HttpServletResponse response) throws Exception;
+
+    @DePermit(value = {"#p0.id+':read'"})
+    @Operation(summary = "按筛选条件预览数据集")
+    @PostMapping("/previewFiltered")
+    Map<String, Object> previewFiltered(@RequestBody DataSetExportRequest request) throws Exception;
+
+    @DePermit(value = {"#p0.id+':export'"})
+    @Operation(summary = "按筛选条件导出数据集 CSV")
+    @PostMapping("/exportDatasetCsv")
+    void exportDatasetCsv(@RequestBody DataSetExportRequest request, HttpServletResponse response) throws Exception;
 }

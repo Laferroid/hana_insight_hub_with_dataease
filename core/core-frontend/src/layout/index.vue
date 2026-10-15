@@ -18,6 +18,7 @@ const settingMenu = computed(() => route.path.includes('sys-setting'))
 const marketMenu = computed(() => route.path.includes('template-market'))
 const toolboxMenu = computed(() => route.path.includes('toolbox'))
 const msgFillMenu = computed(() => route.path.includes('msg-fill'))
+const dictionaryPage = computed(() => route.path.startsWith('/data/dictionary'))
 const isCollapse = ref(false)
 const setCollapse = () => {
   isCollapse.value = !isCollapse.value
@@ -29,7 +30,7 @@ const Menu = defineAsyncComponent(() => import('./components/Menu.vue'))
 </script>
 
 <template>
-  <div class="common-layout">
+  <div class="common-layout" :class="{ 'dictionary-layout': dictionaryPage }">
     <HeaderSystem
       v-if="settingMenu || marketMenu || toolboxMenu || msgFillMenu"
       :title="
@@ -125,6 +126,18 @@ const Menu = defineAsyncComponent(() => import('./components/Menu.vue'))
     }
     .with-sider:has(.appearance-foot) {
       padding: 16px 24px 0px 24px !important;
+    }
+  }
+
+  &.dictionary-layout {
+    .layout-container {
+      flex: 1;
+      min-height: 0;
+
+      .layout-main {
+        min-height: 0;
+        overflow-y: auto;
+      }
     }
   }
 }

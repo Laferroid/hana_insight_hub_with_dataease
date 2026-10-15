@@ -10,6 +10,8 @@ import io.dataease.constant.LogOT;
 import io.dataease.constant.LogST;
 import io.dataease.constant.XpackSettingConstants;
 import io.dataease.dataset.manage.DatasetGroupManage;
+import io.dataease.dataset.manage.DatasetDataManage;
+import io.dataease.dataset.manage.DatasetPreviewCsvManage;
 import io.dataease.exportCenter.manage.ExportCenterDownLoadManage;
 import io.dataease.exportCenter.manage.ExportCenterManage;
 import io.dataease.extensions.datasource.dto.DatasetTableDTO;
@@ -37,6 +39,10 @@ public class DatasetTreeServer implements DatasetTreeApi {
     private ExportCenterManage exportCenterManage;
     @Resource
     private ExportCenterDownLoadManage exportCenterDownLoadManage;
+    @Resource
+    private DatasetDataManage datasetDataManage;
+    @Resource
+    private DatasetPreviewCsvManage datasetPreviewCsvManage;
 
 
     @DeLog(id = "#p0.id", ot = LogOT.MODIFY, st = LogST.DATASET)
@@ -121,6 +127,21 @@ public class DatasetTreeServer implements DatasetTreeApi {
         } else {
             exportCenterManage.addTask(request.getId(), "dataset", request);
         }
+    }
+
+    @Override
+    public Map<String, Object> previewFiltered(DataSetExportRequest request) throws Exception {
+        DatasetGroupInfoDTO dataset = datasetGroupManage.getDatasetGroupInfoDTO(request.getId(), null);
+        if (dataset == null || !"dataset".equalsIgnoreCase(dataset.getNodeType())) {
+            throw io.dataease.exception.DEException.getException("数据集不存在");
+        }
+        return datasetDataManage.previewDataWithLimit(dataset, 0, 100, true, false,
+                StringUtils.defaultString(request.getExpressionTree()));
+    }
+
+    @Override
+    public void exportDatasetCsv(DataSetExportRequest request, HttpServletResponse response) throws Exception {
+        datasetPreviewCsvManage.export(request, response);
     }
 
 }

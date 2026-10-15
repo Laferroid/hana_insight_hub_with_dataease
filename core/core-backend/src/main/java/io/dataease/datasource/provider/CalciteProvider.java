@@ -2196,6 +2196,93 @@ public class CalciteProvider extends Provider {
         return null;
     }
 
+    /** 只读取已存在的数据表结构，不执行来自数据字典的 SQL。 */
+    public String readCreateTableSql(Long datasourceId, String schemaName, String tableName) {
+        try (Connection connection = getConnectionFromPool(datasourceId)) {
+            DatabaseMetaData metadata = connection.getMetaData();
+            String catalog = null;
+            String schema = null;
+            boolean found = false;
+            try (ResultSet tables = metadata.getTables(null, null, tableName, new String[]{"TABLE"})) {
+                while (tables.next()) {
+                    if (!tableName.equalsIgnoreCase(tables.getString("TABLE_NAME"))) {
+                        continue;
+                    }
+                    String candidateSchema = tables.getString("TABLE_SCHEM");
+                    String candidateCatalog = tables.getString("TABLE_CAT");
+                    if (StringUtils.isBlank(schemaName) || schemaName.equalsIgnoreCase(candidateSchema)
+                            || schemaName.equalsIgnoreCase(candidateCatalog)) {
+                        schema = candidateSchema;
+                        catalog = candidateCatalog;
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            if (!found) {
+                DEException.throwException("源数据库中未找到该表，无法获取 DDL");
+            }
+            String quote = StringUtils.trimToEmpty(metadata.getIdentifierQuoteString());
+            if (quote.isEmpty()) {
+                DEException.throwException("源数据库未提供安全的标识符引用方式，无法生成 DDL");
+            }
+            String qualifiedName = StringUtils.isBlank(schemaName) ? quoteIdentifier(tableName, quote)
+                    : quoteIdentifier(schemaName, quote) + "." + quoteIdentifier(tableName, quote);
+            String product = metadata.getDatabaseProductName().toLowerCase(Locale.ROOT);
+            if (product.contains("mysql") || product.contains("mariadb")) {
+                try (Statement statement = connection.createStatement();
+                     ResultSet result = statement.executeQuery("SHOW CREATE TABLE " + qualifiedName)) {
+                    if (result.next()) {
+                        return result.getString(2);
+                    }
+                }
+            }
+            List<String> columns = new ArrayList<>();
+            List<String> primaryKeys = new ArrayList<>();
+            try (ResultSet keys = metadata.getPrimaryKeys(catalog, schema, tableName)) {
+                while (keys.next()) {
+                    primaryKeys.add(quoteIdentifier(keys.getString("COLUMN_NAME"), quote));
+                }
+            }
+            try (ResultSet result = metadata.getColumns(catalog, schema, tableName, null)) {
+                while (result.next()) {
+                    String type = result.getString("TYPE_NAME");
+                    int jdbcType = result.getInt("DATA_TYPE");
+                    int size = result.getInt("COLUMN_SIZE");
+                    int scale = result.getInt("DECIMAL_DIGITS");
+                    if (size > 0 && (jdbcType == Types.VARCHAR || jdbcType == Types.CHAR
+                            || jdbcType == Types.NVARCHAR || jdbcType == Types.NCHAR)) {
+                        type += "(" + size + ")";
+                    } else if (size > 0 && (jdbcType == Types.DECIMAL || jdbcType == Types.NUMERIC)) {
+                        type += "(" + size + (scale > 0 ? "," + scale : "") + ")";
+                    }
+                    String column = "  " + quoteIdentifier(result.getString("COLUMN_NAME"), quote) + " " + type;
+                    if (result.getInt("NULLABLE") == DatabaseMetaData.columnNoNulls) {
+                        column += " NOT NULL";
+                    }
+                    columns.add(column);
+                }
+            }
+            if (columns.isEmpty()) {
+                DEException.throwException("源数据库未返回字段定义，无法生成 DDL");
+            }
+            if (!primaryKeys.isEmpty()) {
+                columns.add("  PRIMARY KEY (" + String.join(", ", primaryKeys) + ")");
+            }
+            return "-- 根据源数据库当前字段生成的参考 DDL；不包含索引、外键和默认值\nCREATE TABLE "
+                    + qualifiedName + " (\n" + String.join(",\n", columns) + "\n);";
+        } catch (Exception e) {
+            if (e instanceof DEException deException) {
+                throw deException;
+            }
+            throw DEException.getException("获取 DDL 失败：" + e.getMessage());
+        }
+    }
+
+    private String quoteIdentifier(String value, String quote) {
+        return quote + value.replace(quote, quote + quote) + quote;
+    }
+
     public void execDDL(DatasourceRequest datasourceRequest) throws Exception {
         DatasourceConfiguration configuration = JsonUtil.parseObject(datasourceRequest.getDatasource().getConfiguration(), DatasourceConfiguration.class);
         int queryTimeout = configuration.getQueryTimeout();

@@ -24,3 +24,6 @@ spring:
       ddl-auto: update
     show-sql: true
 
+dataease:
+  default-pwd: ${DATAEASE_DEFAULT_PWD:DataEase@123456}
+

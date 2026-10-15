@@ -47,6 +47,9 @@ const { t } = useI18n()
 
 const desktop = isDesktop()
 const activeIndex = computed(() => {
+  if (route.path.startsWith('/data/dictionary')) {
+    return '/data/dictionary'
+  }
   if (route.path.includes('system')) {
     return '/system/user'
   }
@@ -59,6 +62,22 @@ const downloadClick = params => {
   useEmitt().emitter.emit('data-export-center', params)
 }
 const routers: any[] = formatRoute(permissionStore.getRoutersNotHidden as AppCustomRouteRecordRaw[])
+//
+const dataMenu = routers.find(menu => menu.path === '/data')
+const dictionaryIndex = dataMenu?.children?.findIndex(menu => menu.path === 'dictionary') ?? -1
+
+if (dictionaryIndex >= 0) {
+  const [dictionaryMenu] = dataMenu.children.splice(dictionaryIndex, 1)
+  const workbenchIndex = routers.findIndex(
+    menu => menu.path === '/workbranch' || menu.path === '/workbranch/index'
+  )
+
+  routers.splice(workbenchIndex >= 0 ? workbenchIndex + 1 : 0, 0, {
+    ...dictionaryMenu,
+    path: '/data/dictionary'
+  })
+}
+
 const showSystem = ref(false)
 const showMsg = ref(false)
 const showToolbox = ref(false)
